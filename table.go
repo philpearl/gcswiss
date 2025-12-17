@@ -21,20 +21,11 @@ type table[V any] struct {
 	index int
 }
 
-func newTable[V any]() *table[V] {
-	var t table[V]
-
+func (t *table[V]) init() {
 	for i := range t.groups {
 		t.groups[i].init()
 	}
-
-	return &t
-}
-
-func (t *table[V]) clear() {
-	for i := range t.groups {
-		t.groups[i].init()
-	}
+	t.localDepth = 0
 	t.used = 0
 	t.index = 0
 }
@@ -47,7 +38,7 @@ func hash[K comparable](key K) hashValue {
 
 // find looks for the given key in the table, returning its location and whether
 // it was found. Values are accessed via the returned GroupLocation.
-func (t *table[V]) find(key string, hash hashValue) (GroupLocation[V], bool) {
+func (t *table[V]) find(m *Map[V], key string, hash hashValue) (GroupLocation[V], bool) {
 	l := hashValue(len(t.groups))
 
 	groupIndex := (hash >> 7) % l
@@ -57,9 +48,10 @@ func (t *table[V]) find(key string, hash hashValue) (GroupLocation[V], bool) {
 		for matches != 0 {
 			index := matches.firstSet()
 			entry := &group.entries[index]
-			if entry.key == key {
+			if m.sb.Get(int(entry.keyIndex)) == key {
 				// Found the key
 				return GroupLocation[V]{
+					m:     m,
 					table: t,
 					group: group,
 					index: index,
@@ -73,11 +65,34 @@ func (t *table[V]) find(key string, hash hashValue) (GroupLocation[V], bool) {
 			// There is an empty slot, so we've reached the end of the probe
 			// sequence and the key is not present in the map.
 			return GroupLocation[V]{
+				m:     m,
 				table: t,
 				group: group,
 				index: empty.firstSet(),
 				hash:  hash,
 			}, false
+		}
+		// Continue to next group in case of hash collision
+		// TODO: try a different probe sequence
+		groupIndex = (groupIndex + 1) % l
+	}
+	panic("table is full")
+}
+
+func (t *table[V]) findEmpty(m *Map[V], hash hashValue, ent *entry[V]) {
+	l := hashValue(len(t.groups))
+
+	groupIndex := (hash >> 7) % l
+	for range t.groups {
+		group := &t.groups[groupIndex]
+		// We're not looking for matches, only empty spaces
+		if empty := group.control.findEmpty(); empty != 0 {
+			// There is an empty slot, so we've reached the end of the probe
+			// sequence and the key is not present in the map.
+			group.entries[empty.firstSet()] = *ent
+			group.control = (group.control &^ (groupControl(0x80) << (empty.firstSet() * 8))) | groupControl(byte(hash&0x7F))<<(empty.firstSet()*8)
+			t.onSet(m)
+			return
 		}
 		// Continue to next group in case of hash collision
 		// TODO: try a different probe sequence
@@ -127,16 +142,13 @@ func (t *table[V]) split(m *Map[V]) (oldTab, newTab *table[V]) {
 			// bit to decide what to split. We also need to re-insert the entry
 			// into the tables, and the location won't be the same because of
 			// probing.
-			hash := hash(ent.key)
+			key := m.sb.Get(int(ent.keyIndex))
+			hash := hash(key)
 			tab := oldTab
 			if hash&mask != 0 {
 				tab = newTab
 			}
-			loc, ok := tab.find(ent.key, hash)
-			if ok {
-				panic("found existing key when splitting table")
-			}
-			loc.Set(ent.key, ent.value)
+			tab.findEmpty(m, hash, ent)
 
 			matches = matches.clearFirstBit()
 		}

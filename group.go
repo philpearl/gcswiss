@@ -8,8 +8,8 @@ type group[V any] struct {
 }
 
 type entry[V any] struct {
-	key   string
-	value V
+	keyIndex uint32
+	value    V
 }
 
 type groupControl uint64
@@ -62,8 +62,16 @@ type GroupLocation[V any] struct {
 	hash  hashValue
 }
 
+// Set is used when the key was not previously present in the map.
 func (gl GroupLocation[V]) Set(key string, value V) {
-	gl.group.entries[gl.index] = entry[V]{key: key, value: value}
+	gl.setEntry(entry[V]{
+		keyIndex: uint32(gl.m.sb.Save(key)),
+		value:    value,
+	})
+}
+
+func (gl GroupLocation[V]) setEntry(ent entry[V]) {
+	gl.group.entries[gl.index] = ent
 	gl.group.control = (gl.group.control &^ (groupControl(0x80) << (gl.index * 8))) | groupControl(byte(gl.hash&0x7F))<<(gl.index*8)
 	gl.table.onSet(gl.m)
 }

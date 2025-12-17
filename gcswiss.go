@@ -14,29 +14,52 @@
 // and points to tables. This is the extensible hashing part.
 package gcswiss
 
+import (
+	"unsafe"
+
+	"github.com/philpearl/mmap"
+	stringbank "github.com/philpearl/stringbank/offheap"
+)
+
 type Map[V any] struct {
 	tables []*table[V]
 
 	tableIndexShift int
 	spareTable      *table[V]
+	sb              stringbank.Stringbank
 }
 
-func New[K comparable, V any]() *Map[V] {
-	m := &Map[V]{
-		tables:          []*table[V]{newTable[V]()},
+func New[V any]() *Map[V] {
+	m := Map[V]{
 		tableIndexShift: 32,
 	}
 
-	return m
+	var err error
+	m.tables, err = mmap.Alloc[*table[V]](1)
+	if err != nil {
+		panic(err)
+	}
+	m.tables[0] = m.newTable()
+
+	return &m
+}
+
+func (m *Map[V]) Close() {
+	m.sb.Close()
+	for _, t := range m.tables {
+		m.freeTable(t)
+	}
+	if m.spareTable != nil {
+		m.freeTable(m.spareTable)
+	}
+	mmap.Free(m.tables)
 }
 
 func (m *Map[V]) Find(key string) (GroupLocation[V], bool) {
 	hash := hash(key)
 	tableIndex := (hash >> uint32(m.tableIndexShift))
 	table := m.tables[tableIndex]
-	loc, found := table.find(key, hash)
-	loc.m = m
-	return loc, found
+	return table.find(m, key, hash)
 }
 
 func (m *Map[V]) newTable() *table[V] {
@@ -45,13 +68,22 @@ func (m *Map[V]) newTable() *table[V] {
 		m.spareTable = nil
 		return t
 	}
-	return newTable[V]()
+	tables, err := mmap.Alloc[table[V]](1)
+	if err != nil {
+		panic(err)
+	}
+	tables[0].init()
+	return &tables[0]
 }
 
 func (m *Map[V]) freeTable(t *table[V]) {
 	if m.spareTable == nil {
-		t.clear()
+		t.init()
 		m.spareTable = t
+		return
+	}
+	if err := mmap.Free(unsafe.Slice(t, 1)); err != nil {
+		panic(err)
 	}
 }
 
@@ -96,11 +128,15 @@ func (m *Map[V]) insertTable(t *table[V]) {
 // need to split a table we double the number of entries that point to the same
 // table.
 func (m *Map[V]) grow() {
-	newTables := make([]*table[V], len(m.tables)*2)
+	newTables, err := mmap.Alloc[*table[V]](len(m.tables) * 2)
+	if err != nil {
+		panic(err)
+	}
 	for i, table := range m.tables {
 		newTables[i*2] = table
 		newTables[i*2+1] = table
 	}
 	m.tableIndexShift--
+	mmap.Free(m.tables)
 	m.tables = newTables
 }
