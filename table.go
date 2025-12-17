@@ -9,8 +9,8 @@ type hashValue uint32
 const tableSize = 4096
 
 // Table is a fixed-size hash table containing groups.
-type table[K comparable, V any] struct {
-	groups [tableSize]group[K, V]
+type table[V any] struct {
+	groups [tableSize]group[V]
 
 	// localDepth is the number of bits of the hash used to pick this table in
 	// the extensible hashing scheme.
@@ -21,8 +21,8 @@ type table[K comparable, V any] struct {
 	index int
 }
 
-func newTable[K comparable, V any]() *table[K, V] {
-	var t table[K, V]
+func newTable[V any]() *table[V] {
+	var t table[V]
 
 	for i := range t.groups {
 		t.groups[i].init()
@@ -31,7 +31,7 @@ func newTable[K comparable, V any]() *table[K, V] {
 	return &t
 }
 
-func (t *table[K, V]) clear() {
+func (t *table[V]) clear() {
 	for i := range t.groups {
 		t.groups[i].init()
 	}
@@ -47,7 +47,7 @@ func hash[K comparable](key K) hashValue {
 
 // find looks for the given key in the table, returning its location and whether
 // it was found. Values are accessed via the returned GroupLocation.
-func (t *table[K, V]) find(key K, hash hashValue) (GroupLocation[K, V], bool) {
+func (t *table[V]) find(key string, hash hashValue) (GroupLocation[V], bool) {
 	l := hashValue(len(t.groups))
 
 	groupIndex := (hash >> 7) % l
@@ -59,7 +59,7 @@ func (t *table[K, V]) find(key K, hash hashValue) (GroupLocation[K, V], bool) {
 			entry := &group.entries[index]
 			if entry.key == key {
 				// Found the key
-				return GroupLocation[K, V]{
+				return GroupLocation[V]{
 					table: t,
 					group: group,
 					index: index,
@@ -72,7 +72,7 @@ func (t *table[K, V]) find(key K, hash hashValue) (GroupLocation[K, V], bool) {
 		if empty := group.control.findEmpty(); empty != 0 {
 			// There is an empty slot, so we've reached the end of the probe
 			// sequence and the key is not present in the map.
-			return GroupLocation[K, V]{
+			return GroupLocation[V]{
 				table: t,
 				group: group,
 				index: empty.firstSet(),
@@ -86,7 +86,7 @@ func (t *table[K, V]) find(key K, hash hashValue) (GroupLocation[K, V], bool) {
 	panic("table is full")
 }
 
-func (t *table[K, V]) onSet(m *Map[K, V]) {
+func (t *table[V]) onSet(m *Map[V]) {
 	t.used++
 	if t.used > len(t.groups)*groupSize*3/4 {
 		// Table is too full, need to grow
@@ -96,7 +96,7 @@ func (t *table[K, V]) onSet(m *Map[K, V]) {
 
 // split splits the table, returning a new table containing hopefully half of
 // the entries.
-func (t *table[K, V]) split(m *Map[K, V]) (oldTab, newTab *table[K, V]) {
+func (t *table[V]) split(m *Map[V]) (oldTab, newTab *table[V]) {
 	// We create two whole new tables rather than reusing the existing one,
 	// because we can't enumerate over the old table and modify it at the same
 	// time.

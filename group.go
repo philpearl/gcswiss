@@ -2,13 +2,13 @@ package gcswiss
 
 const groupSize = 8
 
-type group[K comparable, V any] struct {
+type group[V any] struct {
 	control groupControl
-	entries [groupSize]entry[K, V]
+	entries [groupSize]entry[V]
 }
 
-type entry[K comparable, V any] struct {
-	key   K
+type entry[V any] struct {
+	key   string
 	value V
 }
 
@@ -21,7 +21,7 @@ const (
 	groupControlExpand              = 0x0101010101010101
 )
 
-func (g *group[K, V]) init() {
+func (g *group[V]) init() {
 	g.control = emptyGroupControl
 }
 
@@ -54,24 +54,24 @@ func (gc groupControl) findFull() groupBits {
 // GroupLocation represents a location in the table for a specific key. The
 // caller retrieves the location, then can use it to get or set the value.
 // If the key did not exist, the caller must use Set to set the key and value.
-type GroupLocation[K comparable, V any] struct {
-	m     *Map[K, V]
-	table *table[K, V]
-	group *group[K, V]
+type GroupLocation[V any] struct {
+	m     *Map[V]
+	table *table[V]
+	group *group[V]
 	index int
 	hash  hashValue
 }
 
-func (gl GroupLocation[K, V]) Set(key K, value V) {
-	gl.group.entries[gl.index] = entry[K, V]{key: key, value: value}
+func (gl GroupLocation[V]) Set(key string, value V) {
+	gl.group.entries[gl.index] = entry[V]{key: key, value: value}
 	gl.group.control = (gl.group.control &^ (groupControl(0x80) << (gl.index * 8))) | groupControl(byte(gl.hash&0x7F))<<(gl.index*8)
 	gl.table.onSet(gl.m)
 }
 
-func (gl GroupLocation[K, V]) SetValue(value V) {
+func (gl GroupLocation[V]) SetValue(value V) {
 	gl.group.entries[gl.index].value = value
 }
 
-func (gl GroupLocation[K, V]) Get() V {
+func (gl GroupLocation[V]) Get() V {
 	return gl.group.entries[gl.index].value
 }

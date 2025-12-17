@@ -14,23 +14,23 @@
 // and points to tables. This is the extensible hashing part.
 package gcswiss
 
-type Map[K comparable, V any] struct {
-	tables []*table[K, V]
+type Map[V any] struct {
+	tables []*table[V]
 
 	tableIndexShift int
-	spareTable      *table[K, V]
+	spareTable      *table[V]
 }
 
-func New[K comparable, V any]() *Map[K, V] {
-	m := &Map[K, V]{
-		tables:          []*table[K, V]{newTable[K, V]()},
+func New[K comparable, V any]() *Map[V] {
+	m := &Map[V]{
+		tables:          []*table[V]{newTable[V]()},
 		tableIndexShift: 32,
 	}
 
 	return m
 }
 
-func (m *Map[K, V]) Find(key K) (GroupLocation[K, V], bool) {
+func (m *Map[V]) Find(key string) (GroupLocation[V], bool) {
 	hash := hash(key)
 	tableIndex := (hash >> uint32(m.tableIndexShift))
 	table := m.tables[tableIndex]
@@ -39,16 +39,16 @@ func (m *Map[K, V]) Find(key K) (GroupLocation[K, V], bool) {
 	return loc, found
 }
 
-func (m *Map[K, V]) newTable() *table[K, V] {
+func (m *Map[V]) newTable() *table[V] {
 	if m.spareTable != nil {
 		t := m.spareTable
 		m.spareTable = nil
 		return t
 	}
-	return newTable[K, V]()
+	return newTable[V]()
 }
 
-func (m *Map[K, V]) freeTable(t *table[K, V]) {
+func (m *Map[V]) freeTable(t *table[V]) {
 	if m.spareTable == nil {
 		t.clear()
 		m.spareTable = t
@@ -56,7 +56,7 @@ func (m *Map[K, V]) freeTable(t *table[K, V]) {
 }
 
 // This is called when a table detects it is too full and needs to grow.
-func (m *Map[K, V]) onGrowthNeeded(t *table[K, V]) {
+func (m *Map[V]) onGrowthNeeded(t *table[V]) {
 	globalDepth := 32 - m.tableIndexShift
 	if t.localDepth == globalDepth {
 		// Need to grow the directory. This will take care of splitting tables as needed.
@@ -82,7 +82,7 @@ func (m *Map[K, V]) onGrowthNeeded(t *table[K, V]) {
 	m.freeTable(t)
 }
 
-func (m *Map[K, V]) insertTable(t *table[K, V]) {
+func (m *Map[V]) insertTable(t *table[V]) {
 	depthDifference := 32 - m.tableIndexShift - t.localDepth
 	index := t.index * (depthDifference + 1)
 	tableWidth := 1 << depthDifference
@@ -95,8 +95,8 @@ func (m *Map[K, V]) insertTable(t *table[K, V]) {
 // of entries in the table index, but only split tables as needed. If we don't
 // need to split a table we double the number of entries that point to the same
 // table.
-func (m *Map[K, V]) grow() {
-	newTables := make([]*table[K, V], len(m.tables)*2)
+func (m *Map[V]) grow() {
+	newTables := make([]*table[V], len(m.tables)*2)
 	for i, table := range m.tables {
 		newTables[i*2] = table
 		newTables[i*2+1] = table

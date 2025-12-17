@@ -6,7 +6,7 @@ import (
 )
 
 func TestTableSet(t *testing.T) {
-	tab := newTable[string, int]()
+	tab := newTable[int]()
 
 	for i := range 10000 {
 		key := strconv.Itoa(i)
